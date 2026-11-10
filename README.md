@@ -1,160 +1,19 @@
-# Garuda
+# PG Creative Request Form (GitHub Pages, no login)
 
-Internal dashboard for the Per4mance Guru performance marketing team. One place for every client's Meta Ads, Google Ads and Shopify numbers, creative ranking, funnel leakage, and a 30-minute site check that catches cart, checkout and tracking failures before the client does.
+A form that writes into the "Creative Tracker/Requirement - 2026" tab of the PG Creative Playbook sheet
+(blue columns only) and shows the tracker. GitHub Pages hosts the page, Apps Script is the bridge to the sheet.
 
-Built the same way as the SEO Command Center: a backend on Render writes to Firestore, a static dashboard reads from it.
+## Set up
 
-```
-Meta API ─┐
-Google ───┼─► backend (Render cron) ─► Firestore ─► frontend (Render static site, Google sign-in)
-Shopify ──┤                             ▲
-GA4 ──────┘                             │
-Site Watch (headless browser, every 30 min) ─► Firestore + Slack alerts
-```
+1. Open the sheet, Extensions > Apps Script. Paste `apps-script/Code.gs` into `Code.gs`.
+2. Deploy > New deployment > Web app. Execute as: **Me**. Who has access: **Anyone**. Deploy, authorize, copy the URL ending in `/exec`.
+3. Put that URL in `config.js` (`PG_API_URL`) and commit.
+4. Repo Settings > Pages > Source: **GitHub Actions**. The `pages` workflow publishes this folder.
+5. Open `https://<username>.github.io/<repo>/`.
 
-## What is in this repo
+After any change to `Code.gs`: Deploy > Manage deployments > Edit > New version > Deploy. The URL stays the same.
 
-| Path | What it is |
-|---|---|
-| `backend/src/index.js` | Commands: `daily`, `hourly`, `sitewatch`, `seed`, `test-tokens`, `status`, `serve` (HTTP endpoint for the Sync now button) |
-| `backend/src/fetchers/` | One file per source: `meta.js`, `google.js`, `shopify.js`, `ga4.js`. Read-only. |
-| `backend/src/sitewatch.js` | Playwright checks: homepage, SSL, pixel + GA4 firing, product page, add to cart, checkout renders (ecom) or lead form present (lead gen) |
-| `backend/src/signals.js` | Leakage signals against each client's own baseline: no spend, checkout stuck, order drop, tracking drop, low stock, lead drop, pacing, KPI miss, fatigue, learning limited |
-| `backend/src/alerts.js` | Slack webhook + optional generic webhook, 6 hour cooldown per client per alert type |
-| `backend/src/sample.cjs` | Sample data generator, shared with the dashboard's demo mode |
-| `backend/clients.json` | Client registry: accounts, budget, target, site url. Edit + redeploy = client added |
-| `backend/get-refresh-token.cjs` | One-time helper to get the Google OAuth refresh token |
-| `backend/shopify-install.js` | One-time helper per store: installs the Dev Dashboard app and prints its permanent Admin API token |
-| `frontend/index.html` | The dashboard. Runs in demo mode until `config.js` exists |
-| `frontend/config.example.js` | Copy to `config.js` with the Firebase web config |
-| `firestore.rules` | Read allowed only for verified `@per4mance.guru` Google accounts, no browser writes |
-| `render.yaml` | Render blueprint: 3 cron jobs + 1 static site |
+## Note
 
-## What the dashboard shows
-
-- **Overview**: every client on one screen for Today, Yesterday, 7d, 14d, 30d or MTD, with deltas against the comparable period, a "Needs attention" list (worst first) and pacing bars.
-- **Client page**: KPI strip (spend, platform ROAS, Shopify orders, net sales, MER, CPA, CAC, AOV, abandoned checkouts), what to fix, "Today so far" against the same weekday last week (hourly snapshots), spend and ROAS by day, store funnel next to the Meta pixel funnel with leakage highlighting.
-- **Campaigns tab**: Ads Manager style tree, campaign > ad set > ad, with status, budget, spend, results, CPA, ROAS, CTR, CPM for the selected range and deltas against the previous one. Both platforms.
-- **Creatives tab**: every ad with hook rate, hold rate, CTR trend, frequency, days live and a call (Scale, Steady, Watch, Fatiguing, Pause, Testing) with the reason.
-- **Orders tab**: today's and yesterday's Shopify orders (time, items, value, new or returning, first-visit source, discount code, status), abandoned checkouts and refunds.
-- **Products tab**: 30 day best sellers with units, revenue, current stock and days of stock left.
-- **Site Watch tab**: the latest synthetic check and the last 96 runs.
-- **Copy client update**: a WhatsApp-ready summary of yesterday, the week, pacing and open issues.
-
-## Data contract (Firestore collections)
-
-```
-clients/{clientId}                        name, type (ecom|lead), currency, budget, target {roas|cpl}, am, accounts {meta, google, shopify {shop, tokenEnv}, ga4}, site {url, productPath, leadFormPath}
-daily/{clientId}_{yyyy-mm-dd}_{platform}  platform = meta | google | shopify | ga4
-                                          ads:     spend, impressions, clicks, purchases, revenue, leads, lpv, atc, ic (pixel funnel)
-                                          shopify: orders, grossSales, netSales, refunds, newCustomerOrders, units, checkoutsStarted
-                                          ga4:     sessions, ga4Atc, ga4Checkouts, ga4Purchases
-entities/{clientId}                       campaigns[], adsets[], ads[] each with 30d totals + days {date: [spend, impressions, clicks, purchases, revenue, leads]} for 35 days,
-                                          status, budgets, learning stage; ads also hookRate, holdRate, last7/prev7, thumb, issues; products[]; recentOrders[]; issues[]; account
-intraday/{clientId}_{date}                hours {"13": {spend, purchases, revenue, leads, orders, netSales, checkoutsStarted}} cumulative, written by the hourly run
-signals/{clientId}                        items[] {type, severity, message, value, baseline}
-sitewatch/{clientId}                      checks[], history[] (last 96 runs)
-syncs/{clientId}                          per source: {at, ok, mode: live|sample|waiting|error, error}
-alerts/{autoId}                           log of everything sent
-```
-
-Metric definitions the dashboard uses:
-
-- Platform ROAS = platform-reported revenue / spend. MER = Shopify net sales / total ad spend.
-- Net sales = order subtotal after discounts and refunded items, before shipping and tax.
-- CPA = spend / Shopify orders (platform purchases if no Shopify). CAC = spend / first-time-customer orders (Shopify's `customerOrderIndex == 1`).
-- Attribution coverage = platform purchases / Shopify orders. A sudden drop with steady orders = tracking broke.
-- Hook rate = 3 second plays / impressions. Hold rate = ThruPlays / 3 second plays.
-- Fatiguing = frequency past 3.2 and CTR down 15%+ and CPM up 12%+, last 7 days vs the 7 before.
-- Checkout stuck = today's orders / checkouts started under 35% of the 14 day norm, with 15+ checkouts.
-
-## Setup, in order
-
-### 1. Firebase (5 min)
-1. console.firebase.google.com, Add project, name it (for example `per4mance-desk`), Analytics off.
-2. Build, Firestore Database, Create, location `asia-south1`, production mode.
-3. Build, Authentication, Sign-in method, enable Google.
-4. Firestore, Rules tab: paste `firestore.rules`, Publish.
-5. Project settings, Service accounts, Generate new private key. Keep the JSON file safe. This is `FIREBASE_SERVICE_ACCOUNT_JSON` (paste the whole file as one line).
-6. Project settings, General, Your apps, Add web app, name `desk`. Copy the config block into `frontend/config.js` (copy `config.example.js` first).
-7. Authentication, Settings, Authorized domains: add the Render dashboard domain once you have it (step 4).
-
-### 2. Client registry
-Edit `backend/clients.json`. For the first client fill `name`, `type`, `budget`, `target`, `accounts.meta` (digits only, no `act_`), `accounts.google` (digits only), `accounts.shopify.shop` (`store.myshopify.com`), `site.url` (the live domain), and set `"active": true`.
-
-### 3. Tokens (all read-only)
-| Env var | Where it comes from |
-|---|---|
-| `META_ACCESS_TOKEN` | Business Settings, System Users, your system user, Generate New Token, app Per4mance Desk, permissions `ads_read` + `read_insights`, expiry Never |
-| `GOOGLE_ADS_DEVELOPER_TOKEN` | MCC, Tools and Settings, API Center. Needs Basic access (apply from the same page if it says Test) |
-| `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | The MCC id, digits only |
-| `GOOGLE_OAUTH_CLIENT_ID` / `SECRET` | Google Cloud, APIs and Services, Credentials, OAuth client, type Desktop app. Enable "Google Ads API" and "Google Analytics Data API" in the Library first |
-| `GOOGLE_OAUTH_REFRESH_TOKEN` | `node backend/get-refresh-token.cjs CLIENT_ID CLIENT_SECRET`, open the URL, log in with the account that is on the MCC |
-| `SHOPIFY_TOKEN_CLIENT_ONE` | Since Jan 2026 Shopify no longer creates custom apps inside the store admin. Make the app once in the Dev Dashboard (dev.shopify.com): Create app, name `Per4mance Desk`, App URL `http://localhost:53683/`, Redirect URL `http://localhost:53683/callback`, Admin API scopes `read_orders read_products read_inventory read_customers`, request Protected customer data access (orders + customers), Release a version, Distribution: Custom, enter the store domain. Then `node backend/shopify-install.js CLIENT_ID CLIENT_SECRET store.myshopify.com`, open the URL, log in to the store, Install. The printed token is permanent. Same app, one install per store. Variable name must match `accounts.shopify.tokenEnv` in clients.json |
-| `SLACK_WEBHOOK_URL` | api.slack.com/apps, create app, Incoming Webhooks on, add to `#desk-alerts` |
-| `DESK_ALLOWED_DOMAINS` | Comma list of email domains allowed to press Sync. Defaults to `per4mance.guru` |
-| `DESK_ALLOWED_EMAILS` | Comma list of individual addresses allowed to press Sync, for anyone signing in from outside those domains. Checked on the server, so the copy in `frontend/config.js` only controls the sign-in screen |
-
-Check them before deploying: `cd backend && node --env-file=.env src/index.js test-tokens`
-
-### 4. Render, free plan
-
-Render's free tier has no cron jobs, so `render.yaml` ships two free services and the schedule lives
-outside, at a free scheduler. Total cost: nothing.
-
-1. Push this repo to GitHub.
-2. Render, New, Blueprint, pick the repo. It creates `desk-api` (free web service) and
-   `desk-dashboard` (static site).
-3. Open `desk-api`, Environment, paste the tokens. Copy the generated `DESK_SYNC_KEY`, you need it twice.
-4. Schedule the runs. Any free scheduler works; cron-job.org needs no card. Create three jobs, each a
-   GET to `desk-api`'s url, and set each one's timeout to 30s (the endpoint answers 202 straight away
-   and keeps working in the background, so a short timeout is correct):
-
-   | Job | URL | When |
-   |---|---|---|
-   | Daily | `https://desk-api.onrender.com/run?mode=daily&key=YOUR_KEY` | 06:00 IST |
-   | Hourly | `https://desk-api.onrender.com/run?mode=hourly&key=YOUR_KEY` | every hour at :15 |
-   | Site Watch | `https://desk-api.onrender.com/run?mode=sitewatch&key=YOUR_KEY` | every 30 min |
-
-5. Put the same url and key into `frontend/config.js` as `syncUrl` (`https://desk-api.onrender.com/sync`)
-   and `syncKey`, so the dashboard's Sync now button works.
-6. Fire the daily job once by hand. Check `desk-api`'s logs: every source should say `synced` or `waiting`.
-7. Open the dashboard URL, sign in with a per4mance.guru Google account. Add that URL to Firebase
-   authorized domains if sign-in complains.
-
-What the free tier costs you in features:
-
-- The instance sleeps after 15 minutes idle and takes about 50 seconds to wake. Every scheduled run
-  absorbs that wake time, and the first Sync now click of the morning feels slow. Nothing is lost.
-- Site Watch runs in light mode (`DESK_SITEWATCH_LIGHT=true`), because 512 MB will not hold headless
-  Chromium. It still checks the homepage, SSL, Meta pixel, GA4 tag, product page and a real add to
-  cart against the live storefront. The one check it cannot do is loading the checkout page, because
-  Shopify's bot protection answers an automated request with HTTP 403. Checkout health is instead
-  watched from the data side by the `checkout-stuck` signal, which compares checkouts started against
-  orders on the client's own 14 day norm. That catches a broken payment gateway from real customer
-  behaviour rather than a synthetic visit, so the loss is smaller than it sounds.
-
-To move to paid later: set `desk-api` to a paid instance, drop `DESK_SITEWATCH_LIGHT`, and add the
-cron services back (git history has the original `render.yaml`).
-
-### 5. Adding the next client
-Add a block to `clients.json`, add its Shopify token as a new env var (`SHOPIFY_TOKEN_<ID>`), push. Meta and Google need nothing new: one token covers every account in the BM and MCC.
-
-## Running locally
-```
-cd backend
-npm install
-npm run install-browser        # only for sitewatch
-cp .env.example .env           # fill what you have
-node --env-file=.env src/index.js seed         # sample clients, writes JSON files to backend/data when Firebase is not set
-node --env-file=.env src/index.js daily
-node --env-file=.env src/index.js sitewatch
-```
-Open `frontend/index.html` from any static server (`npx serve frontend`) to see the dashboard in demo mode.
-
-## Behaviour worth knowing
-- Every daily run re-pulls the last 7 days, because Meta's attribution keeps changing yesterday's numbers for a week and Shopify refunds land late. Without this the dashboard drifts away from Ads Manager and the team stops trusting it.
-- A missing token never breaks a run. That source shows "waiting for token" on the dashboard and everything else stays live.
-- Site Watch alerts only on the second consecutive failure of the same check (30 minutes apart), so one network blip does not page anyone. It never places an order.
-- `DESK_SAMPLE_FALLBACK=true` fills sample data for real clients whose token is missing, clearly labelled "sample" on the dashboard. Useful for a demo, switch off after.
-- Signals need history. Checkout stuck and order drop use a 14 day baseline, so they go quiet for the first two weeks on a new client.
+Access "Anyone" means anyone who has the link can add rows and change statuses, without logging in.
+Share the link only with the team. The form can only write the blue columns.

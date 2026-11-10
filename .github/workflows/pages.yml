@@ -1,10 +1,9 @@
-# Publishes the creative request form (creative-form folder) as a GitHub Pages site on every push to main.
+# Publishes the creative request form (repo root) as a GitHub Pages site on every push to main.
 # Live at https://<username>.github.io/<repo>/ once Pages is enabled with Source: GitHub Actions.
 name: pages
 on:
   push:
     branches: [main]
-    paths: ["creative-form/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +25,6 @@ jobs:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: creative-form
+          path: .
       - id: deployment
         uses: actions/deploy-pages@v4
