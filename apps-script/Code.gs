@@ -1,4 +1,8 @@
 /**
+ * @OnlyCurrentDoc
+ * (Limits the permission to this one spreadsheet, so Google asks for a narrow access instead of
+ * all spreadsheets. Needs this script to be opened from the sheet: Extensions > Apps Script.)
+ *
  * PG Creative Requirement Dashboard
  * Simple form that writes ONLY into the blue columns of the
  * "Creative Tracker/Requirement - 2026" tab. All other columns
@@ -79,7 +83,12 @@ function doPost(e) {
 /* ---------- helpers ---------- */
 
 function getSheet_() {
-  const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TAB_NAME);
+  // Bound to the sheet (opened from Extensions > Apps Script): use it directly, narrow permission.
+  // Fallback to the ID keeps it working if the script is ever used as a standalone project.
+  let ss = null;
+  try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
+  if (!ss || ss.getId() !== SHEET_ID) ss = SpreadsheetApp.openById(SHEET_ID);
+  const sh = ss.getSheetByName(TAB_NAME);
   if (!sh) throw new Error('Tab not found: ' + TAB_NAME);
   return sh;
 }
