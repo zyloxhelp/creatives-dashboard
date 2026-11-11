@@ -1,2 +1,1 @@
-// Apps Script web app URL (Deploy > Manage deployments > Web app URL, ends in /exec).
-window.PG_API_URL = 'https://script.google.com/macros/s/AKfycbxvNaXu4gop_7CDD_QYBpSvHj89fK81vR9oToW-BfHChnwJnyAOUBjcqO2Uhl1-WIDB/exec';
+window.PG_API_URL = 'https://script.google.com/macros/s/AKfycbwoVM1iHkAam8b4AGgut5FpjaFXshmiVbmr-atuW3zuwVxkggZP3kTD7FgM1dQSsQ29/exec';
