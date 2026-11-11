@@ -88,8 +88,13 @@ function getSheet_() {
   let ss = null;
   try { ss = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
   if (!ss || ss.getId() !== SHEET_ID) ss = SpreadsheetApp.openById(SHEET_ID);
-  const sh = ss.getSheetByName(TAB_NAME);
-  if (!sh) throw new Error('Tab not found: ' + TAB_NAME);
+  // Match the tab name ignoring extra spaces and capital letters (the real tab name has a trailing space).
+  const norm = function (x) { return String(x).replace(/\s+/g, ' ').trim().toLowerCase(); };
+  const want = norm(TAB_NAME);
+  const sheets = ss.getSheets();
+  let sh = null;
+  for (let i = 0; i < sheets.length; i++) { if (norm(sheets[i].getName()) === want) { sh = sheets[i]; break; } }
+  if (!sh) throw new Error('Tab not found: ' + TAB_NAME + '. Tabs in this file: ' + sheets.map(function (t) { return '"' + t.getName() + '"'; }).join(', '));
   return sh;
 }
 
